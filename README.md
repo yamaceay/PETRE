@@ -21,7 +21,7 @@ Privacy Enhancement for Text via Risk-oriented Explainability
 │       └───Wiki553.json                            # Pandas dataframe with abstracts and bodies of individuals' biographies
 └───Outputs                                         # Folder for PETRE's results for all datasets
     └───Wiki553                                     # Results for the used dataset
-        └───BG_Bodies+Abstracts                     # Results using both articles bodies and abstracts as background knowledge
+        └───BG_Abstracts                            # Results only using articles' abstracts as background knowledge
         │   └───Annotations_St.NER4                 # Folder for results using Stanford NER4 as starting anonymization
         │   │   │   Annotations_PETRE_Start.json    # Initial annotations after PETRE's chunking
         │   │   │   Annotations_PETRE_k=2.json      # PETRE annotations for k=2
@@ -33,6 +33,9 @@ Privacy Enhancement for Text via Risk-oriented Explainability
         │   └───PETRE_Ranks                         # Ranks per document for each PETRE's output
         │       │   ...
         │
-        └───BG_Bodies                               # Results only using articles bodies as background knowledge
+        └───BG_Bodies                               # Results only using articles' bodies as background knowledge
+        │    │   ...
+        │
+        └───BG_Bodies+Abstracts                     # Results using both articles' bodies and abstracts as background knowledge
             │   ...
 ```
