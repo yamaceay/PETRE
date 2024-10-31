@@ -1,0 +1,11 @@
+{
+    "output_base_folder_path": "outputs/Wiki553",
+    "data_file_path": "examples/Wiki553.json",
+    "individual_name_column": "name",
+    "original_text_column": "original",
+    "starting_anonymization_path":"examples/Annotations_k_anonymity_Greedy.json",
+    "tri_pipeline_path":"./TRI_Pipeline",
+    "ks":[2,3,5,7,10],
+    "mask_text":"",
+    "use_mask_all_instances":true
+}
