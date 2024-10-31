@@ -57,7 +57,7 @@ conda activate ENVIRONMENT_NAME
 ```
 Continue with the steps of the [Usage section](#usage).
 
-This has been tested in Windows 10 and Windows 11 operating systems, but should be compatible with Linux-based systems.
+This has been tested in Windows 11 operating system, but should be compatible with Linux-based and Windows 10 systems.
 
 # Usage
 The PETRE method is implemented in the [petre.py](petre.py) script. They can be executed via [CLI](#cli) (Command Line Interface) or by importing the [PETRE class](#petre-class) directly into your Python code. The following sections provide detailed instructions for both approaches. Additionally, both methods offer configuration options (details on how in each subsection), which are described in the [Configuration section](#configuration).
