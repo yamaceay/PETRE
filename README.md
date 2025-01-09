@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/Windows%2010-Compatible_but_not_tested-lightgrey" alt="Compatible but not tested on Windows 10"/>
 </p>
 
-This repository contains the code and data for the **privacy enhancement for text via risk-oriented explainability** (PETRE) method presented in **B. Manzanares-Salor, D. Sánchez, Enhancing text anonymization via re-identification risk-based explainability, Submitted, 2024**.
+This repository contains the code and data for the **privacy enhancement for text via risk-oriented explainability** (PETRE) method presented in [B. Manzanares-Salor, D. Sánchez, Enhancing text anonymization via re-identification risk-based explainability, Knowledge-Based Systems, 2024](https://authors.elsevier.com/a/1kOvM_LdTK7ioh).
 
 Experimental data was extracted from the [bootstrapping-anonymization](https://github.com/anthipapa/bootstrapping-anonymization) repository, corresponding to the publication [A. Papadopoulou, P. Lison, L. Øvrelid, I. Pilán, Bootstrapping Text Anonymization Models with Distant Supervision, Proceedings of the Thirteenth Language Resources and Evaluation Conference, pages 4477–4487, Marseille, France, 2022](https://aclanthology.org/2022.lrec-1.476/) and the [text-anonymization-benchmark](https://github.com/NorskRegnesentral/text-anonymization-benchmark) repository, corresponding to the publication [I. Pilán, P. Lison, L. Øvrelid, A. Papadopoulou, D. Sánchez, M. Batet, The Text Anonymization Benchmark (TAB): A Dedicated Corpus and Evaluation Framework for Text Anonymization, Computational Linguistics, 48 (4), pages 1053–1101, 2022](https://doi.org/10.1162/coli_a_00458). The exact data files utilized in the experiments are located in the [data](data) folder.
 
@@ -30,22 +30,22 @@ Privacy Enhancement for Text via Risk-oriented Explainability (PETRE)
 │   config.json                             # Example configuration file
 └───data                                    # Folder with data files
     └───Wiki553                             # Folder for the dataset based on Wikipedia biographies
-    │   Wiki553_BK=Original.json            # Panda's dataframe with 553 individuals, documents to protect and background knowledge formed by the documents to protect
-    │   Wiki553_BK=Public.json              # Panda's dataframe with 553 individuals, documents to protect and background knowledge formed by the articles' abstracts
-    │   Wiki553_BK=Public+Original.json     # Panda's dataframe with 553 individuals, documents to protect and background knowledge formed by the articles' abstracts and documents to protect 
-    │   Annotations_St.NER3.json            # Anonymization annotations from Stanford NER3
-    │   Annotations_St.NER4.json            # Anonymization annotations from Stanford NER4
-    │   Annotations_St.NER7.json            # Anonymization annotations from Stanford NER7
-    │   Annotations_Presidio.json           # Anonymization annotations from Microsoft Presidio
-    │   Annotations_Word2Vec_t=0.25.json    # Anonymization annotations from the Word2Vec-based method using a threshold of 0.25
-    │   Annotations_k_anonymity_Greedy.json # Anonymization annotations from k-anonymity greedy
-    │   Annotations_k_anonymity_Random.json # Anonymization annotations from k-anonymity random
-    │   Annotations_Manual.json             # Anonymization annotations from human annotators
+    │   │   Wiki553_BK=Original.json            # Panda's dataframe with 553 individuals, documents to protect and background knowledge formed by the documents to protect
+    │   │   Wiki553_BK=Public.json              # Panda's dataframe with 553 individuals, documents to protect and background knowledge formed by the articles' bodies
+    │   │   Wiki553_BK=Public+Original.json     # Panda's dataframe with 553 individuals, documents to protect and background knowledge formed by the articles' bodies and documents to protect 
+    │   │   Annotations_St.NER3.json            # Anonymization annotations from Stanford NER3
+    │   │   Annotations_St.NER4.json            # Anonymization annotations from Stanford NER4
+    │   │   Annotations_St.NER7.json            # Anonymization annotations from Stanford NER7
+    │   │   Annotations_Presidio.json           # Anonymization annotations from Microsoft Presidio
+    │   │   Annotations_Word2Vec_t=0.25.json    # Anonymization annotations from the Word2Vec-based method using a threshold of 0.25
+    │   │   Annotations_k_anonymity_Greedy.json # Anonymization annotations from k-anonymity greedy
+    │   │   Annotations_k_anonymity_Random.json # Anonymization annotations from k-anonymity random
+    │   │   Annotations_Manual.json             # Anonymization annotations from human annotators
     └───TAB                                 # Folder for the court rulings dataset
-    |   TAB_test_BK=Original.json           # Panda's dataframe with 127 individuals, documents to protect and background knowledge formed by the documents to protect
-    │   Annotations_test_St.NER7.json       # Anonymization annotations from Stanford NER7
-    │   Annotations_test_Presidio.json      # Anonymization annotations from Microsoft Presidio
-    │   Annotations_test_Manual.json        # Anonymization annotations from human annotators
+        |   TAB_test_BK=Original.json           # Panda's dataframe with 127 individuals, documents to protect and background knowledge formed by the documents to protect
+        │   Annotations_test_St.NER7.json       # Anonymization annotations from Stanford NER7
+        │   Annotations_test_Presidio.json      # Anonymization annotations from Microsoft Presidio
+        │   Annotations_test_Manual.json        # Anonymization annotations from human annotators
 ```
 
 # Install
