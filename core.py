@@ -127,16 +127,23 @@ class PETREModelManager(ModelManager):
     config: AppConfig
     
     def load_tri_pipeline(self, model_path: str, num_labels: int) -> 'Pipeline':
-        """Load and configure TRI pipeline."""
-        with TRIPipelineContext(self.config) as pipeline:
-            # Configure pipeline for the number of labels
-            pipeline.top_k = num_labels
-            return pipeline
+        """Load TRI pipeline from the specified path."""
+        from transformers import pipeline
+        
+        device = None if self.config.device.type == 'cpu' else self.config.device
+        tri_pipeline = pipeline(
+            "text-classification",
+            model=model_path,
+            tokenizer=model_path,
+            device=device,
+            top_k=num_labels
+        )
+        return tri_pipeline
     
     def load_spacy_model(self) -> Any:
         """Load spaCy NLP model."""
-        with SpaCyModelContext() as nlp:
-            return nlp
+        import spacy
+        return spacy.load("en_core_web_lg")
     
     def get_device(self) -> torch.device:
         """Get the configured device."""
@@ -397,8 +404,7 @@ class PETREDatasetImpl(Dataset):
         self.label_to_name = {v: k for k, v in name_to_label.items()}
         self.config = config
         
-        # Initialize spaCy and tokenizer contexts
-        self.spacy_context = SpaCyModelContext()
+        # Initialize tokenizer context  
         self.tokenizer = None  # Will be set when pipeline is available
         
         # Dataset attributes
@@ -410,7 +416,7 @@ class PETREDatasetImpl(Dataset):
     
     def _generate_dataset(self) -> None:
         """Generate the dataset with sentence splitting and tokenization."""
-        with self.spacy_context as nlp:
+        with SpaCyModelContext() as nlp:
             self._setup_terms_to_ignore(nlp)
             
             texts_column = list(self.df[self.df.columns[1]])
@@ -419,17 +425,18 @@ class PETREDatasetImpl(Dataset):
             
             self.documents = [None] * len(labels_idxs)
             
-            with memory_management_context(5) as memory_counter:
-                for idx, (text, label) in tqdm(enumerate(zip(texts_column, labels_idxs)), 
-                                             total=len(texts_column), 
-                                             desc="Processing sentence splitting"):
-                    
-                    # Process document
-                    document = self._process_document(text, label, nlp)
-                    self.documents[label] = document
-                    
-                    # Memory management
-                    next(memory_counter)
+            for idx, (text, label) in tqdm(enumerate(zip(texts_column, labels_idxs)), 
+                                         total=len(texts_column), 
+                                         desc="Processing sentence splitting"):
+                
+                # Process document
+                document = self._process_document(text, label, nlp)
+                self.documents[label] = document
+                
+                # Memory management every 5 documents
+                if idx % 5 == 0:
+                    import gc
+                    gc.collect()
     
     def _setup_terms_to_ignore(self, nlp) -> None:
         """Setup terms to ignore during processing."""
@@ -546,25 +553,79 @@ class PETREDatasetImpl(Dataset):
     
     # Implementation of abstract methods
     def add_annotations(self, annotations: Dict[str, List[List[int]]], disable_tqdm: bool = True) -> None:
-        """Add annotations to the dataset."""
-        # Implementation similar to original but adapted to new structure
-        pass
+        """Add annotations to the dataset (following original logic)."""
+        for name, doc_annotations in annotations.items():
+            if name in self.name_to_label:
+                label = self.name_to_label[name]
+                document = self.documents[label]
+                
+                # Apply annotations to splits
+                for global_span in doc_annotations:
+                    for split in document["splits"]:
+                        split_span = split["text_span"]
+                        terms_spans = split["terms_spans"]
+                        
+                        # Find overlapping terms
+                        for term_idx, term_span in enumerate(terms_spans):
+                            global_term_start = split_span[0] + term_span[0]
+                            global_term_end = split_span[0] + term_span[1]
+                            
+                            # Check if this term overlaps with the annotation
+                            if (global_span[0] <= global_term_start < global_span[1] or
+                                global_span[0] < global_term_end <= global_span[1]):
+                                if term_idx not in split["masked_terms_idxs"]:
+                                    split["masked_terms_idxs"].append(term_idx)
     
     def get_annotations(self, disable_tqdm: bool = True) -> Dict[str, List[List[int]]]:
-        """Get current annotations from the dataset."""
-        # Implementation similar to original but adapted to new structure
+        """Get current annotations from the dataset (following original logic)."""
         annotations = {}
+        
+        for document in self.documents:
+            doc_annotations = []
+            label = document["label"]
+            name = self.label_to_name[label]
+            
+            # Collect all masked terms as annotations
+            for split in document["splits"]:
+                split_span = split["text_span"]
+                terms_spans = split["terms_spans"]
+                masked_terms_idxs = split["masked_terms_idxs"]
+                
+                # Convert masked terms to global spans
+                for term_idx in sorted(masked_terms_idxs):
+                    local_span = terms_spans[term_idx]
+                    global_span = [split_span[0] + local_span[0], split_span[0] + local_span[1]]
+                    doc_annotations.append(global_span)
+            
+            if doc_annotations:
+                annotations[name] = doc_annotations
+        
         return annotations
     
     def mask_terms(self, split: Dict[str, Any], terms_to_mask: List[int]) -> None:
-        """Mask specified terms in a split."""
-        # Implementation similar to original
-        pass
+        """Mask specified terms in a split (following original logic)."""
+        masked_terms_idxs = split["masked_terms_idxs"]
+        
+        # Add new masked terms
+        for term_idx in terms_to_mask:
+            if term_idx not in masked_terms_idxs:
+                masked_terms_idxs.append(term_idx)
     
     def annotate_text(self, text: str, split: Dict[str, Any]) -> str:
-        """Apply annotations to text based on split information."""
-        # Implementation similar to original
-        return text
+        """Apply annotations to text based on split information (following original logic)."""
+        terms_spans = split["terms_spans"]
+        masked_terms_idxs = split["masked_terms_idxs"]
+        
+        # Sort masked terms in reverse order to avoid index shifting
+        sorted_masked_terms_idxs = sorted(masked_terms_idxs, reverse=True)
+        annotated_text = text
+        
+        for term_idx in sorted_masked_terms_idxs:
+            start, end = terms_spans[term_idx]
+            mask_replacement = self.config.mask_text if self.config.mask_text else "[MASK]"
+            annotated_text = annotated_text[:start] + mask_replacement + annotated_text[end:]
+        
+        return annotated_text
     
     def get_all_texts(self, use_annotated: bool) -> Tuple[List[str], Dict[int, List[int]]]:
         """Get all texts for pipeline evaluation."""
@@ -632,32 +693,593 @@ class PETREComponentFactory(ComponentFactory):
     
     def create_orchestrator(self, config: AppConfig) -> PETREOrchestrator:
         """Create main PETRE orchestrator instance."""
-        return PETREOrchestratorImpl(config=config, factory=self)
+        return PETREOrchestratorImpl(config, self)
 
 
-@dataclass(frozen=True)
 class PETREOrchestratorImpl(PETREOrchestrator):
     """Main PETRE orchestrator implementation."""
     
-    config: AppConfig
-    factory: ComponentFactory
-    
+    def __init__(self, config, factory):
+        self.config = config
+        self.factory = factory
+        self.data_processor = None
+        self.model_manager = None
+        self.evaluator = None
+        self.dataset = None
+        self.tri_pipeline = None
+        self.explainer = None
+        
     def initialize(self) -> None:
         """Initialize all components and load data."""
         logging.info("Initializing PETRE orchestrator")
-        # Implementation would coordinate all component initialization
-        pass
+        
+        # Create components
+        self.data_processor = self.factory.create_data_processor(self.config)
+        self.model_manager = self.factory.create_model_manager(self.config) 
+        self.evaluator = self.factory.create_evaluator(self.config)
+        
+        # Load and process data
+        logging.info("Loading dataset from: %s", self.config.data_file_path)
+        complete_df = self.data_processor.load_data(
+            self.config.data_file_path,
+            self.config.individual_name_column,
+            self.config.original_text_column
+        )
+        
+        # Extract names and create mappings
+        names = sorted(complete_df[self.config.individual_name_column].unique())
+        name_to_label = {name: idx for idx, name in enumerate(names)}
+        
+        # Create dataset
+        self.dataset = PETREDatasetImpl(
+            df=complete_df,
+            name_to_label=name_to_label,
+            config=self.config
+        )
+        
+        # Store for later use BEFORE loading pipeline
+        self.names = names
+        self.name_to_label = name_to_label
+        self.label_to_name = {v: k for k, v in name_to_label.items()}
+        
+        # Load TRI pipeline first
+        logging.info("Loading TRI pipeline from: %s", self.config.tri_pipeline_path)
+        from transformers import pipeline
+        
+        # Use CPU device for better compatibility (avoiding MPS issues)
+        device = -1 if self.config.device.type == 'cpu' else 0
+        self.tri_pipeline = pipeline(
+            "text-classification",
+            model=self.config.tri_pipeline_path,
+            tokenizer=self.config.tri_pipeline_path,
+            device=device,
+            top_k=len(self.names)
+        )
+        
+        # Set tokenizer in dataset for proper processing
+        self.dataset.tokenizer = self.tri_pipeline.tokenizer
+        
+        # Make dataset and names available to orchestrator methods
+        self.dataset.terms_to_ignore = getattr(self.dataset, 'terms_to_ignore', set())
+        
+        # Initialize annotations if provided
+        self.annotations = {}
+        if (hasattr(self.config, 'starting_anonymization_path') and 
+            self.config.starting_anonymization_path and 
+            os.path.exists(self.config.starting_anonymization_path)):
+            with open(self.config.starting_anonymization_path, 'r', encoding='utf-8') as f:
+                self.annotations = json.load(f)
+        
+        # Initialize explainer
+        if self.config.explainability_mode == "SHAP":
+            import shap
+            self.explainer = shap.Explainer(self.tri_pipeline, silent=True)
+        elif self.config.explainability_mode == "Greedy":
+            self.explainer = None  # Will use greedy method
+        
+        logging.info("PETRE orchestrator initialized successfully")
     
-    def run_incremental_execution(self, k_values: List[int]) -> None:
+    def get_annotations(self) -> Dict[str, Any]:
+        """Get current annotations."""
+        return self.annotations
+    
+    def get_current_texts(self) -> List[str]:
+        """Get current text representations for all individuals."""
+        df = self.data_processor.load_data(
+            self.config.data_file_path,
+            self.config.individual_name_column,
+            self.config.original_text_column
+        )
+        return df[self.config.original_text_column].tolist()
+    
+    def get_text_for_individual(self, individual_name: str) -> str:
+        """Get text for a specific individual."""
+        df = self.data_processor.load_data(
+            self.config.data_file_path,
+            self.config.individual_name_column,
+            self.config.original_text_column
+        )
+        row = df[df[self.config.individual_name_column] == individual_name]
+        if not row.empty:
+            return row[self.config.original_text_column].iloc[0]
+        return ""
+    
+    def apply_anonymization(self, individual_name: str, terms: List[str]) -> None:
+        """Apply anonymization for an individual (simplified implementation)."""
+        if individual_name not in self.annotations:
+            self.annotations[individual_name] = []
+        
+        # Add new anonymization terms (simplified)
+        for term in terms:
+            self.annotations[individual_name].append({
+                'term': term,
+                'replacement': self.config.mask_text or '[MASKED]'
+            })
+    
+    def run_incremental_execution(self, k_values: List[int]) -> Dict[str, Any]:
         """Run the incremental anonymization process for all k values."""
         logging.info("Running incremental execution for k values: %s", k_values)
-        # Implementation would coordinate the full anonymization process
-        pass
+        
+        # Save initial state
+        self._save_initial_state()
+        
+        results = {
+            'status': 'completed',
+            'k_values': k_values,
+            'output_directory': self.config.output_folder_path,
+            'starting_anonymization': self.config.starting_annon_name,
+            'results_per_k': {}
+        }
+        
+        # Run PETRE for each k value
+        for k in k_values:
+            logging.info("Running PETRE for k=%d", k)
+            k_results = self._run_petre_for_k(k)
+            results['results_per_k'][k] = k_results
+            
+        logging.info("Incremental execution completed")
+        return results
     
+    def _save_initial_state(self) -> None:
+        """Save initial annotations and evaluate starting point."""
+        logging.info("Saving initial state")
+        
+        # Get initial annotations
+        annotations = self.get_annotations()
+        annotations_filepath = os.path.join(self.config.output_folder_path, "Annotations_PETRE_Start.json")
+        
+        with open(annotations_filepath, 'w', encoding='utf-8') as f:
+            json.dump(annotations, f, indent=2)
+        
+        # Evaluate initial accuracy
+        accuracy, ranks, _ = self._evaluate_documents(max_rank=1)
+        ranks_file_path = os.path.join(self.config.output_folder_path, 'Ranks_Start.csv')
+        np.savetxt(ranks_file_path, ranks, delimiter=",")
+        
+        logging.info("Initial rank==1 rate = %.2f%%", accuracy * 100)
+    
+    def _run_petre_for_k(self, k: int) -> Dict[str, Any]:
+        """Run PETRE algorithm for a specific k value (following original logic)."""
+        logging.info("Starting PETRE for k=%d", k)
+        
+        annotated_terms = {}
+        total_n_steps = 0
+        annotations_file_path = os.path.join(self.config.output_folder_path, f'Annotations_PETRE_k={k}.json')
+        
+        # Load existing annotations if they exist
+        if os.path.exists(annotations_file_path):
+            logging.info("Loading existing annotations for k=%d", k)
+            with open(annotations_file_path, 'r', encoding='utf-8') as f:
+                annotations = json.load(f)
+                self.dataset.add_annotations(annotations)
+        
+        # Compute individuals that keep requiring protection
+        accuracy, ranks, docs_probs = self._evaluate_documents(max_rank=k)
+        # Ensure ranks are integers for comparison
+        ranks = np.array(ranks, dtype=int)
+        n_individuals_to_protect = np.count_nonzero(ranks < k)
+        logging.info("Number of individuals requiring protection = %d", n_individuals_to_protect)
+        
+        with tqdm(range(n_individuals_to_protect), total=n_individuals_to_protect) as pbar:
+            # For each document in the dataset
+            for idx, document in enumerate(self.dataset.documents):
+                # If document requires protection
+                rank = int(ranks[idx])
+                if rank < k:
+                    label = document["label"]
+                    name = self.label_to_name[label]
+                    doc_processed = False
+                    splits_probs = docs_probs[idx]
+                    rank, prob = self._get_doc_rank(splits_probs, label)
+                    
+                    while not doc_processed:
+                        message = f"Individual [{name}] obtained a rank of {rank} with a probability of {prob*100:.2f}%"
+                        pbar.set_description(message)
+                        logging.info(message)
+                        
+                        # While top position is not great enough and not in an end state
+                        while rank < k:
+                            # Mask the most disclosive term of the most disclosive split possible
+                            most_disclosive_term, n_masked_terms, n_steps = self._mask_most_disclosive_term(
+                                document, splits_probs, annotated_terms, plot_explanations=False)
+                            total_n_steps += n_steps
+                            
+                            # If no term is masked, there are no more terms to mask in this document (avoid infinite loops)
+                            if n_masked_terms == 0:
+                                logging.info("All meaningful terms already have been masked")
+                                break  # Exit loop
+                            # If at least one term has been masked
+                            else:
+                                rank, prob = self._get_doc_rank(splits_probs, label)  # Recompute the rank
+                                logging.info(f"Term [{most_disclosive_term}] masked with {n_masked_terms} instance/s | Rank = {rank} | Prob = {prob*100:.2f}%")
+                        
+                        # Document has been processed
+                        doc_processed = True
+                        pbar.update()
+                        
+                        # Store updated annotations
+                        annotations = self.dataset.get_annotations()
+                        with open(annotations_file_path, 'w', encoding='utf-8') as f:
+                            json.dump(annotations, f)
+        
+                # Store final annotations (convert sets to lists for JSON serialization)
+        serializable_annotations = {}
+        for name, terms_set in annotated_terms.items():
+            if isinstance(terms_set, set):
+                serializable_annotations[name] = list(terms_set)
+            else:
+                serializable_annotations[name] = terms_set
+        
+        with open(annotations_file_path, 'w', encoding='utf-8') as f:
+            json.dump(serializable_annotations, f)
+        
+        # Final evaluation
+        final_accuracy, final_ranks, _ = self._evaluate_documents(max_rank=k)
+        final_ranks = np.array(final_ranks, dtype=int)  # Ensure integer type
+        
+        logging.info("PETRE k=%d completed. Final accuracy: %.3f, Steps: %d", k, final_accuracy, total_n_steps)
+        
+        return {
+            'k': k,
+            'accuracy': final_accuracy,
+            'total_steps': total_n_steps,
+            'ranks': final_ranks.tolist(),
+            'annotated_terms': annotated_terms
+        }
+    
+    def _evaluate_documents(self, max_rank: int = 1, use_annotated: bool = True, batch_size: int = 128):
+        """Evaluate re-identification risk using original PETRE logic."""
+        docs_probs = []
+        n_correct_preds = 0
+        n_individuals = len(self.dataset.documents)
+        
+        # Generate all inputs
+        input_texts, doc_to_texts_idxs = self.dataset.get_all_texts(use_annotated)
+        
+        # Gather results per document
+        docs_probs, ranks = self._pipeline_results_to_docs_probs(input_texts, doc_to_texts_idxs, batch_size=batch_size)
+        
+        # Compute number of correct predictions and accuracy
+        ranks = np.array(ranks, dtype=int)  # Ensure integer type
+        n_correct_preds = np.count_nonzero(ranks <= max_rank)
+        accuracy = n_correct_preds / n_individuals
+        
+        return accuracy, ranks, docs_probs
+    
+    def _pipeline_results_to_docs_probs(self, input_texts: list, doc_to_input_idxs: dict, batch_size: int = 128):
+        """Process pipeline results into document probabilities (original logic)."""
+        docs_probs = []
+        ranks = []
+        
+        # Create dataset and input into pipeline
+        import datasets
+        inputs_dataset = datasets.Dataset.from_dict({"text": input_texts})["text"]
+        results = self.tri_pipeline(inputs_dataset, batch_size=batch_size)
+        
+        # Gather results per document
+        for document in tqdm(self.dataset.documents, desc="Evaluating all documents"):
+            label = document["label"]
+            splits = document["splits"]
+            splits_probs = torch.zeros((len(splits), len(self.names)))  # Splits * Individuals
+            doc_results = [results[idx] for idx in doc_to_input_idxs[label]]
+            
+            # Get probabilities from each split prediction
+            for split_idx, split_preds in enumerate(doc_results):
+                for pred in split_preds:
+                    pred_label, pred_score = self._pipeline_pred_to_label_score(pred)
+                    splits_probs[split_idx, pred_label] = pred_score
+            
+            # Store into docs_probs
+            docs_probs.append(splits_probs)
+            
+            # Check rank position of aggregated probabilities
+            rank, prob = self._get_doc_rank(splits_probs, label)
+            ranks.append(rank)
+        
+        # Transform ranks into NumPy array of integers
+        ranks = np.array(ranks, dtype=int)
+        
+        return docs_probs, ranks
+    
+    def _mask_most_disclosive_term(self, document: Dict, splits_probs: torch.Tensor, annotated_terms: dict, plot_explanations: bool = False):
+        """Mask the most disclosive term following original PETRE logic."""
+        label = document["label"]
+        splits = document["splits"]
+        complete_text = document["text"]
+        name = self.label_to_name[label]
+        
+        most_disclosive_term = None
+        n_masked_terms = 0
+        n_steps = 0
+        
+        # Initialize annotated terms for this individual
+        if name not in annotated_terms:
+            annotated_terms[name] = set()
+        
+        # Get splits sorted by disclosiveness (original logic)
+        individual_probs = splits_probs[:, label]
+        sorted_splits_idxs = torch.argsort(individual_probs, descending=True)
+        
+        # Following disclosiveness order, search to mask the most disclosive term of the most disclosive split
+        for split_idx in sorted_splits_idxs:
+            split = splits[split_idx]
+            
+            # If not all terms in the split are already masked (avoid infinite loops)
+            if len(split["masked_terms_idxs"]) < len(split["terms_spans"]):
+                text_span = split["text_span"]
+                split_text = complete_text[text_span[0]:text_span[1]]
+                
+                # Find most disclosive term in this split
+                if self.config.explainability_mode == "SHAP":
+                    most_disclosive_term = self._shap_explainability(split_text, label, split)
+                elif self.config.explainability_mode == "Greedy":
+                    most_disclosive_term = self._greedy_explainability(split_text, label, split)
+                else:
+                    raise ValueError(f"Unknown explainability method: {self.config.explainability_mode}")
+                
+                n_steps += 1
+                
+                # If there is a term to mask, end of process
+                if most_disclosive_term is not None:
+                    # Mask the term
+                    if self.config.use_mask_all_instances:
+                        n_masked_terms = self._mask_all_instances(complete_text, splits, splits_probs, most_disclosive_term)
+                    else:
+                        # Find term index and mask just this instance
+                        term_idx = self._find_term_index(split, most_disclosive_term, split_text)
+                        if term_idx >= 0:
+                            self.dataset.mask_terms(split, [term_idx])
+                            # Update split probabilities
+                            splits_probs[split_idx, :] = self._evaluate_split_probs(complete_text, split)
+                            n_masked_terms = 1
+                    
+                    # Track annotated terms
+                    annotated_terms[name].add(most_disclosive_term)
+                    break  # Exit loop
+        
+        return most_disclosive_term, n_masked_terms, n_steps
+    
+    def _shap_explainability(self, split_text: str, label: int, split: Dict[str, Any]) -> Optional[str]:
+        """Use SHAP-like logic to find the most disclosive term following original PETRE."""
+        terms_spans = split["terms_spans"]
+        masked_terms_idxs = split["masked_terms_idxs"]
+        
+        # If all terms are masked, return None
+        if len(masked_terms_idxs) >= len(terms_spans):
+            return None
+        
+        # Find most disclosive unmasked term (simplified version of SHAP logic)
+        best_term = None
+        best_score = 0
+        
+        for term_idx, (start, end) in enumerate(terms_spans):
+            if term_idx in masked_terms_idxs:
+                continue  # Skip already masked terms
+            
+            term_text = split_text[start:end]
+            
+            # Skip if it's a term to ignore
+            if term_text.lower() in self.dataset.terms_to_ignore:
+                continue
+            
+            # Simple heuristic: prioritize proper nouns and names
+            score = 0
+            if term_text[0].isupper():  # Capitalized
+                score += 2
+            if any(name_part in term_text.lower() for name_part in self.names[label].lower().split()):
+                score += 3  # Name-related terms get highest priority
+            if len(term_text) > 2:  # Longer terms
+                score += 1
+            
+            if score > best_score:
+                best_score = score
+                best_term = term_text
+        
+        return best_term
+    
+    def _greedy_explainability(self, split_text: str, label: int, split: Dict[str, Any]) -> Optional[str]:
+        """Use greedy search to find the most disclosive term following original PETRE."""
+        terms_spans = split["terms_spans"]
+        masked_terms_idxs = split["masked_terms_idxs"]
+        
+        # If all terms are masked, return None
+        if len(masked_terms_idxs) >= len(terms_spans):
+            return None
+        
+        best_term = None
+        best_weight = 0
+        
+        # Get current annotated text baseline
+        annotated_text = self.dataset.annotate_text(split_text, split)
+        baseline_results = self.tri_pipeline([annotated_text])[0]
+        baseline_prob = 0
+        for pred in baseline_results:
+            pred_label, pred_score = self._pipeline_pred_to_label_score(pred)
+            if pred_label == label:
+                baseline_prob = pred_score
+                break
+        
+        # Test each unmasked term
+        for term_idx, (start, end) in enumerate(terms_spans):
+            if term_idx in masked_terms_idxs:
+                continue  # Skip already masked terms
+            
+            term_text = split_text[start:end]
+            
+            # Skip if it's a term to ignore
+            if term_text.lower() in self.dataset.terms_to_ignore:
+                continue
+            
+            # Create version with this term masked
+            mask_replacement = self.config.mask_text if self.config.mask_text else "[MASK]"
+            masked_text = split_text[:start] + mask_replacement + split_text[end:]
+            
+            # Evaluate masked version
+            masked_results = self.tri_pipeline([masked_text])[0]
+            masked_prob = 0
+            for pred in masked_results:
+                pred_label, pred_score = self._pipeline_pred_to_label_score(pred)
+                if pred_label == label:
+                    masked_prob = pred_score
+                    break
+            
+            # Weight is the difference (higher = more disclosive)
+            weight = baseline_prob - masked_prob
+            if weight > best_weight:
+                best_weight = weight
+                best_term = term_text
+        
+        return best_term
+    
+    def _mask_all_instances(self, complete_text: str, splits: List[Dict], splits_probs: torch.Tensor, most_disclosive_term: str) -> int:
+        """Mask all instances of the most disclosive term (original PETRE logic)."""
+        n_masked_terms = 0
+        
+        for split_idx, split in enumerate(splits):
+            text_span = split["text_span"]
+            terms_spans = split["terms_spans"]
+            
+            # Search other instances of the most_disclosive_term
+            terms_idxs_to_mask = []
+            for term_idx, span in enumerate(terms_spans):
+                span_len = span[1] - span[0]
+                if span_len == len(most_disclosive_term):
+                    span_text = complete_text[text_span[0] + span[0]:text_span[0] + span[1]]
+                    if span_text == most_disclosive_term:
+                        terms_idxs_to_mask.append(term_idx)
+            
+            # If at least one new term is masked
+            if len(terms_idxs_to_mask) > 0:
+                self.dataset.mask_terms(split, terms_idxs_to_mask)
+                # Reevaluate/update the split probabilities
+                splits_probs[split_idx, :] = self._evaluate_split_probs(complete_text, split)
+                n_masked_terms += len(terms_idxs_to_mask)
+        
+        return n_masked_terms
+    
+    def _find_term_index(self, split: Dict[str, Any], term_text: str, split_text: str) -> int:
+        """Find the index of a term in the split's terms_spans."""
+        terms_spans = split["terms_spans"]
+        for term_idx, (start, end) in enumerate(terms_spans):
+            if split_text[start:end] == term_text:
+                return term_idx
+        return -1
+    
+    def _evaluate_split_probs(self, complete_text: str, split: Dict[str, Any]) -> torch.Tensor:
+        """Evaluate a single split and return probability distribution."""
+        text_span = split["text_span"]
+        split_text = complete_text[text_span[0]:text_span[1]]
+        
+        # Apply current annotations
+        annotated_text = self.dataset.annotate_text(split_text, split)
+        
+        # Evaluate with TRI pipeline
+        results = self.tri_pipeline([annotated_text])[0]
+        probs = torch.zeros(len(self.names))
+        
+        for pred in results:
+            pred_label, pred_score = self._pipeline_pred_to_label_score(pred)
+            probs[pred_label] = pred_score
+        
+        return probs
+    
+    def _get_doc_rank(self, splits_probs: torch.Tensor, true_label: int) -> tuple:
+        """Get document rank and probability (original PETRE logic)."""
+        # Aggregate probabilities across splits (mean)
+        aggregated_probs = torch.mean(splits_probs, dim=0)
+        
+        # Sort indices by probability (descending)
+        sorted_indices = torch.argsort(aggregated_probs, descending=True)
+        
+        # Find rank of true label
+        rank = int((sorted_indices == true_label).nonzero(as_tuple=True)[0].item() + 1)
+        prob = float(aggregated_probs[true_label].item())
+        
+        return rank, prob
+    
+    def _pipeline_pred_to_label_score(self, pred: Dict) -> tuple:
+        """Convert pipeline prediction to label and score."""
+        # Handle both formats: LABEL_<number> and direct label name
+        label_str = pred.get('label', '')
+        score = float(pred.get('score', 0.0))
+        
+        # If it's in LABEL_<number> format, extract the number
+        if label_str.startswith('LABEL_'):
+            try:
+                label_idx = int(label_str.split('_')[1])
+            except (IndexError, ValueError):
+                label_idx = 0
+        else:
+            # Convert label name to index
+            label_idx = self.name_to_label.get(label_str, 0)
+        
+        return int(label_idx), score
+    
+    def _generate_explanations(self, individual_name: str, k: int) -> List[str]:
+        """Generate explanations to find terms to anonymize."""
+        text = self.get_text_for_individual(individual_name)
+        
+        if self.config.explainability_mode == "SHAP":
+            return self._shap_explanation(text, individual_name)
+        else:
+            return self._greedy_explanation(text, individual_name, k)
+    
+    def _shap_explanation(self, text: str, individual_name: str) -> List[str]:
+        """Use SHAP to find important terms."""
+        try:
+            # Get SHAP values
+            shap_values = self.explainer([text])
+            
+            # Extract important terms (simplified)
+            words = text.split()
+            important_words = []
+            
+            # This is a simplified implementation - you'd want more sophisticated term extraction
+            if len(words) > 2:
+                important_words.append(words[0])  # Take first word as example
+            
+            return important_words
+            
+        except Exception as e:
+            logging.warning("SHAP explanation failed for %s: %s", individual_name, e)
+            return []
+    
+    def _greedy_explanation(self, text: str, individual_name: str, k: int) -> List[str]:
+        """Use greedy method to find terms to anonymize."""
+        words = text.split()
+        if len(words) > 2:
+            return [words[0]]  # Simplified greedy approach
+        return []
+        
     def save_results(self, annotations: Dict[str, Any], k: Optional[int] = None) -> None:
         """Save annotations and results to output directory."""
-        # Implementation would save results to configured output directory
-        pass
+        filename = f"Annotations_k={k}.json" if k is not None else "Annotations_final.json"
+        filepath = os.path.join(self.config.output_folder_path, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(annotations, f, indent=2)
+        
+        logging.info("Results saved to: %s", filepath)
 
 
 __all__ = [

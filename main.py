@@ -26,9 +26,24 @@ cli_imports = smart_import('cli', [
     'create_configuration', 'print_configuration_summary', 
     'print_results_summary', 'handle_error'
 ])
-config_imports = smart_import('config', ['AppConfig'])
-interfaces_imports = smart_import('interfaces', ['PETREError'])
+config_imports = smart_import('config', ['AppConfig', 'create_app_config'])
+interfaces_imports = smart_import('interfaces', ['PETREError', 'ConfigurationError'])
 core_imports = smart_import('core', ['PETREComponentFactory'])
+
+# Optional annotation generation support
+try:
+    annotation_imports = smart_import('annotation_generator', [
+        'AnnotationGenerator', 'AnnotationMethod', 'AnnotationConfig'
+    ])
+    AnnotationGenerator = annotation_imports['AnnotationGenerator']
+    AnnotationMethod = annotation_imports['AnnotationMethod']
+    AnnotationConfig = annotation_imports['AnnotationConfig']
+    _ANNOTATION_AVAILABLE = True
+except (ImportError, ModuleNotFoundError, KeyError):
+    AnnotationGenerator = None
+    AnnotationMethod = None
+    AnnotationConfig = None
+    _ANNOTATION_AVAILABLE = False
 
 # Extract imports for clean usage
 parse_arguments = cli_imports['parse_arguments']
@@ -39,8 +54,11 @@ print_configuration_summary = cli_imports['print_configuration_summary']
 print_results_summary = cli_imports['print_results_summary']
 handle_error = cli_imports['handle_error']
 
+# Extract imported functions and classes for use
 AppConfig = config_imports['AppConfig']
+create_app_config = config_imports['create_app_config']
 PETREError = interfaces_imports['PETREError']
+ConfigurationError = interfaces_imports['ConfigurationError']
 PETREComponentFactory = core_imports['PETREComponentFactory']
 
 
@@ -175,29 +193,121 @@ def cli_main() -> None:
 
 
 # Programmatic interface for external usage
-def run_petre_from_config(config_path: str, **overrides) -> Dict[str, Any]:
+def run_petre_from_config(config_path_or_config, **overrides) -> Dict[str, Any]:
     """
-    Run PETRE programmatically from configuration file.
+    Run PETRE from a configuration file or AppConfig object with optional parameter overrides.
     
     Args:
-        config_path: Path to JSON configuration file
-        **overrides: Configuration overrides
+        config_path_or_config: Path to JSON configuration file OR AppConfig instance
+        **overrides: Optional parameter overrides
         
     Returns:
-        Dictionary containing results
+        Dictionary containing evaluation results
         
-    Raises:
-        PETREError: If execution fails
+    Example:
+        >>> results = run_petre_from_config('config.json', ks=[2, 3, 5])
+        >>> results = run_petre_from_config(config_object)
     """
-    # Import here to avoid circular dependencies
-    config_module = smart_import('config', ['create_app_config'])
-    create_app_config = config_module['create_app_config']
+    # Handle both string path and AppConfig object
+    if isinstance(config_path_or_config, str):
+        config = create_app_config(config_path_or_config, **overrides)
+    elif isinstance(config_path_or_config, AppConfig):
+        config = config_path_or_config
+        # Apply overrides if any (create new config with updates)
+        if overrides:
+            config_dict = vars(config).copy()
+            config_dict.update(overrides)
+            # We'd need to recreate from dict, but this is complex with dataclass
+            # For now, just use as-is and log warning
+            if overrides:
+                logging.warning("Overrides not supported when passing AppConfig object directly")
+    else:
+        raise ConfigurationError(f"Expected string path or AppConfig object, got {type(config_path_or_config)}")
     
-    # Create configuration
-    config = create_app_config(config_path, **overrides)
+    # Handle dynamic annotation generation if needed
+    config = _handle_annotation_generation(config)
     
-    # Run workflow
     return run_petre_workflow(config)
+
+
+def _handle_annotation_generation(config: AppConfig) -> AppConfig:
+    """
+    Handle dynamic annotation generation if annotation_method is specified.
+    
+    Args:
+        config: Application configuration
+        
+    Returns:
+        Updated configuration with generated annotations
+    """
+    if config.annotation_method and _ANNOTATION_AVAILABLE:
+        # Map string method names to enum values
+        method_mapping = {
+            'spacy_ner3': AnnotationMethod.SPACY_NER3,
+            'spacy_ner4': AnnotationMethod.SPACY_NER4, 
+            'spacy_ner7': AnnotationMethod.SPACY_NER7,
+            'presidio': AnnotationMethod.PRESIDIO,
+            'combined': AnnotationMethod.COMBINED
+        }
+        
+        method = method_mapping.get(config.annotation_method)
+        if not method:
+            raise ConfigurationError(f"Unknown annotation method: {config.annotation_method}")
+        
+        # Create annotation generator
+        generator = AnnotationGenerator()
+        
+        # Configure annotation generation
+        annotation_config = AnnotationConfig(
+            method=method,
+            confidence_threshold=config.annotation_confidence_threshold,
+            entity_types=set(config.annotation_entity_types) if config.annotation_entity_types else None,
+            merge_overlapping=True,
+            min_span_length=2,
+            max_span_length=100
+        )
+        
+        # Generate annotations
+        logging.info("Generating annotations using method: %s", config.annotation_method)
+        
+        if method == AnnotationMethod.COMBINED:
+            # Use multiple methods for combined approach
+            methods = [AnnotationMethod.SPACY_NER3, AnnotationMethod.PRESIDIO]
+            annotations = generator.generate_combined_annotations(
+                data_file=config.data_file_path,
+                methods=methods,
+                individual_name_column=config.individual_name_column,
+                text_column=config.original_text_column,
+                config=annotation_config
+            )
+        else:
+            annotations = generator.generate_annotations(
+                data_file=config.data_file_path,
+                individual_name_column=config.individual_name_column,
+                text_column=config.original_text_column,
+                config=annotation_config
+            )
+        
+        # Save generated annotations to the same directory structure as the original
+        annotation_file = os.path.join(config.output_base_folder_path, f"Annotations_{config.annotation_method}_generated.json")
+        
+        # Ensure output directory exists (but don't create extra nested folders)
+        os.makedirs(config.output_base_folder_path, exist_ok=True)
+        generator.save_annotations(annotations, annotation_file, config.annotation_method)
+        
+        logging.info("Generated %d annotation sets", len(annotations))
+        logging.info("Saved annotations to: %s", annotation_file)
+        
+        # Create new config with the generated annotation file
+        config_dict = {
+            **{field.name: getattr(config, field.name) for field in config.__dataclass_fields__.values() if field.init},
+            'starting_anonymization_path': annotation_file,
+            'annotation_method': None  # Clear this to avoid re-generation
+        }
+        
+        return AppConfig(**config_dict)
+    
+    return config
 
 
 def run_petre_from_dict(config_dict: Dict[str, Any]) -> Dict[str, Any]:

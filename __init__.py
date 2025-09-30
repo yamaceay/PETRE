@@ -119,6 +119,30 @@ get_default_configuration = main_imports['get_default_configuration']
 create_petre_orchestrator = main_imports['create_petre_orchestrator']
 run_petre_workflow = main_imports['run_petre_workflow']
 
+# Annotation Generation (if available)
+try:
+    annotation_imports = smart_import('annotation_generator', [
+        'AnnotationGenerator', 'AnnotationMethod', 'AnnotationConfig',
+        'create_spacy_ner3_annotations', 'create_presidio_annotations', 'create_combined_annotations'
+    ])
+    
+    AnnotationGenerator = annotation_imports['AnnotationGenerator']
+    AnnotationMethod = annotation_imports['AnnotationMethod']
+    AnnotationConfig = annotation_imports['AnnotationConfig']
+    create_spacy_ner3_annotations = annotation_imports['create_spacy_ner3_annotations']
+    create_presidio_annotations = annotation_imports['create_presidio_annotations']
+    create_combined_annotations = annotation_imports['create_combined_annotations']
+    _ANNOTATION_AVAILABLE = True
+except (ImportError, ModuleNotFoundError, KeyError):
+    # Annotation generation not available - graceful fallback
+    AnnotationGenerator = None
+    AnnotationMethod = None
+    AnnotationConfig = None
+    create_spacy_ner3_annotations = None
+    create_presidio_annotations = None
+    create_combined_annotations = None
+    _ANNOTATION_AVAILABLE = False
+
 # CLI Functions (if available)
 if _CLI_AVAILABLE:
     build_parser = cli_imports['build_parser']
@@ -199,6 +223,14 @@ __all__ = [
 # Add CLI functions to __all__ if available
 if _CLI_AVAILABLE:
     __all__.extend(['build_parser', 'parse_arguments', 'configure_logging'])
+
+# Add annotation generation functions to __all__ if available
+if _ANNOTATION_AVAILABLE:
+    __all__.extend([
+        'AnnotationGenerator', 'AnnotationMethod', 'AnnotationConfig',
+        'create_spacy_ner3_annotations', 'create_presidio_annotations', 
+        'create_combined_annotations'
+    ])
 
 
 # Package initialization logging

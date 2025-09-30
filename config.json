@@ -1,13 +1,20 @@
 {
-    "output_base_folder_path": "outputs/Wiki553/BK=Original",
-    "data_file_path": "data/Wiki553/Wiki553_BK=Original.json",
-    "individual_name_column": "Name",
-    "original_text_column": "Original",
-    "starting_anonymization_path":"data/Wiki553/Annotations_k_anonymity_Greedy.json",
-    "tri_pipeline_path":"./TRI_Pipeline",
-    "ks":[2,3,5,7,10],
-    "mask_text":"",
-    "use_mask_all_instances":true,
-    "explainability_mode":"SHAP",
-    "use_chunking":true
+    "output_base_folder_path": "outputs/Wiki50/BK=Original",
+    "data_file_path": "data/Wiki50/Wiki50_BK=Original.json",
+    "individual_name_column": "name",
+    "original_text_column": "original_abstract",
+    "annotation_method": "spacy_ner3",
+    "annotation_confidence_threshold": 0.8,
+    "annotation_entity_types": [
+        "PERSON",
+        "ORG",
+        "GPE",
+        "DATE"
+    ],
+    "tri_pipeline_path": "tri_pipelines/Wiki50_BK=Original",
+    "ks": [2,3,5,7,10],
+    "mask_text": "",
+    "use_mask_all_instances": true,
+    "explainability_mode": "SHAP",
+    "use_chunking": true
 }

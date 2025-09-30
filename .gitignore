@@ -1,0 +1,4 @@
+*.pyc
+__pycache__
+tri_pipelines/
+outputs/

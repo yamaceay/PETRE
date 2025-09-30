@@ -38,7 +38,6 @@ class AppConfig:
     # Core paths
     output_base_folder_path: str
     data_file_path: str
-    starting_anonymization_path: str
     tri_pipeline_path: str
     
     # Column names
@@ -47,6 +46,12 @@ class AppConfig:
     
     # Anonymization parameters
     ks: List[int]
+    
+    # Annotation configuration - can be file path OR generation method
+    starting_anonymization_path: Optional[str] = None
+    annotation_method: Optional[str] = None  # 'spacy_ner3', 'spacy_ner4', 'spacy_ner7', 'presidio', 'combined'
+    annotation_confidence_threshold: float = 0.7
+    annotation_entity_types: Optional[List[str]] = None
     
     # Optional configuration with defaults
     mask_text: str = ""
@@ -61,6 +66,13 @@ class AppConfig:
     
     def __post_init__(self) -> None:
         """Post-initialization validation and derived value computation."""
+        # Validate annotation configuration
+        if not self.starting_anonymization_path and not self.annotation_method:
+            raise ConfigurationError("Either starting_anonymization_path or annotation_method must be provided")
+        
+        if self.starting_anonymization_path and self.annotation_method:
+            raise ConfigurationError("Provide either starting_anonymization_path OR annotation_method, not both")
+        
         # Validate k values
         if not isinstance(self.ks, list) or len(self.ks) == 0:
             raise ConfigurationError("Setting 'ks' must be a non-empty list")
@@ -76,14 +88,20 @@ class AppConfig:
         if not os.path.isfile(self.data_file_path):
             raise ConfigurationError(f"Data file not found: {self.data_file_path}")
         
-        if not os.path.isfile(self.starting_anonymization_path):
+        # Only validate annotation file if using file-based approach
+        if self.starting_anonymization_path and not os.path.isfile(self.starting_anonymization_path):
             raise ConfigurationError(f"Starting anonymization file not found: {self.starting_anonymization_path}")
         
         if not os.path.isdir(self.tri_pipeline_path):
             raise ConfigurationError(f"TRI pipeline path not found: {self.tri_pipeline_path}")
         
         # Compute derived values using object.__setattr__ for frozen dataclass
-        object.__setattr__(self, 'starting_annon_name', self._compute_starting_annon_name())
+        # Only compute starting_annon_name if we have a file path
+        if self.starting_anonymization_path:
+            object.__setattr__(self, 'starting_annon_name', self._compute_starting_annon_name())
+        else:
+            object.__setattr__(self, 'starting_annon_name', 'dynamic_annotations')
+            
         object.__setattr__(self, 'output_folder_path', self._compute_output_folder_path())
         object.__setattr__(self, 'device', self._detect_device())
         
@@ -96,6 +114,8 @@ class AppConfig:
     
     def _compute_starting_annon_name(self) -> str:
         """Extract filename without extension from starting anonymization path."""
+        if not self.starting_anonymization_path:
+            return 'dynamic_annotations'
         head, tail = ntpath.split(self.starting_anonymization_path)
         filename = tail or ntpath.basename(head)
         return os.path.splitext(filename)[0]
@@ -167,12 +187,12 @@ def validate_config_data(config_data: Dict[str, Any]) -> None:
     Raises:
         ConfigurationError: If required fields are missing
     """
+    # Always required fields
     required_fields = [
         "output_base_folder_path",
         "data_file_path", 
         "individual_name_column",
         "original_text_column",
-        "starting_anonymization_path",
         "tri_pipeline_path",
         "ks"
     ]
@@ -181,7 +201,23 @@ def validate_config_data(config_data: Dict[str, Any]) -> None:
     if missing_fields:
         raise ConfigurationError(f"Missing required configuration fields: {missing_fields}")
     
-    # Validate field types
+    # Validate annotation source - either file-based OR method-based
+    has_annotation_file = "starting_anonymization_path" in config_data
+    has_annotation_method = "annotation_method" in config_data
+    
+    if not has_annotation_file and not has_annotation_method:
+        raise ConfigurationError(
+            "Must specify either 'starting_anonymization_path' (file-based) or "
+            "'annotation_method' (dynamic generation)"
+        )
+    
+    if has_annotation_file and has_annotation_method:
+        raise ConfigurationError(
+            "Cannot specify both 'starting_anonymization_path' and 'annotation_method'. "
+            "Choose either file-based or dynamic annotation generation."
+        )
+    
+    # Validate field types for present fields
     type_validations = {
         "output_base_folder_path": str,
         "data_file_path": str,
@@ -189,11 +225,14 @@ def validate_config_data(config_data: Dict[str, Any]) -> None:
         "original_text_column": str,
         "starting_anonymization_path": str,
         "tri_pipeline_path": str,
-        "ks": list
+        "ks": list,
+        "annotation_method": str,
+        "annotation_confidence_threshold": (int, float),
+        "annotation_entity_types": list
     }
     
     for field, expected_type in type_validations.items():
-        if not isinstance(config_data[field], expected_type):
+        if field in config_data and not isinstance(config_data[field], expected_type):
             raise ConfigurationError(f"Field '{field}' must be of type {expected_type.__name__}")
 
 
