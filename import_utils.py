@@ -16,19 +16,19 @@ from typing import Dict, Any, List
 def smart_import(module_name: str, items: List[str]) -> Dict[str, Any]:
     """
     Import items with automatic fallback between relative and absolute imports.
-    
+
     This function detects the execution context and uses the appropriate import
     strategy to support both:
     - Direct execution: python3 main.py
     - Module execution: python3 -m package.main
-    
+
     Args:
         module_name: Name of the module to import from
         items: List of items to import from the module
-        
+
     Returns:
         Dictionary mapping item names to imported objects
-        
+
     Raises:
         ImportError: If the module or items cannot be imported
     """
@@ -36,16 +36,16 @@ def smart_import(module_name: str, items: List[str]) -> Dict[str, Any]:
     calling_frame = sys._getframe(1)
     calling_module = calling_frame.f_globals.get('__name__', '')
     calling_file = calling_frame.f_globals.get('__file__', '')
-    
+
     # Check if we're running as a package (__main__ in package context)
     is_package_execution = (
-        calling_module.startswith('petre.') or 
+        calling_module.startswith('petre.') or
         calling_module == 'petre' or
         (calling_module == '__main__' and calling_file and 'petre' in calling_file)
     )
-    
+
     imported_items = {}
-    
+
     try:
         # First attempt: relative import (for package execution)
         if is_package_execution:
@@ -60,9 +60,9 @@ def smart_import(module_name: str, items: List[str]) -> Dict[str, Any]:
             current_dir = os.path.dirname(os.path.abspath(calling_file)) if calling_file else os.getcwd()
             if current_dir not in sys.path:
                 sys.path.insert(0, current_dir)
-            
+
             module = importlib.import_module(module_name)
-    
+
     except ImportError:
         # Final fallback: try the other approach
         try:
@@ -81,33 +81,33 @@ def smart_import(module_name: str, items: List[str]) -> Dict[str, Any]:
                     raise ImportError(f"Cannot import {module_name}")
         except ImportError as e:
             raise ImportError(f"Failed to import {module_name} using both relative and absolute imports: {e}")
-    
+
     # Extract requested items from the module
     for item in items:
         if hasattr(module, item):
             imported_items[item] = getattr(module, item)
         else:
             raise ImportError(f"Cannot import name '{item}' from '{module_name}'")
-    
+
     return imported_items
 
 
 def _determine_package_name(file_path: str) -> str | None:
     """
     Determine the package name from the file path.
-    
+
     Args:
         file_path: Path to the calling file
-        
+
     Returns:
         Package name if determinable, None otherwise
     """
     if not file_path:
         return None
-    
+
     # Look for package indicators
     path_parts = os.path.normpath(file_path).split(os.sep)
-    
+
     # Find 'petre' in the path
     for i, part in enumerate(path_parts):
         if part == 'petre':
@@ -115,21 +115,21 @@ def _determine_package_name(file_path: str) -> str | None:
             petre_dir = os.sep.join(path_parts[:i+1])
             if os.path.exists(os.path.join(petre_dir, '__init__.py')):
                 return 'petre'
-    
+
     return None
 
 
 def ensure_module_path() -> None:
     """
     Ensure the current module directory is in sys.path.
-    
+
     This is useful for direct script execution to ensure
     all local modules can be imported.
     """
     # Get the directory of the calling file
     calling_frame = sys._getframe(1)
     calling_file = calling_frame.f_globals.get('__file__')
-    
+
     if calling_file:
         module_dir = os.path.dirname(os.path.abspath(calling_file))
         if module_dir not in sys.path:
@@ -139,13 +139,13 @@ def ensure_module_path() -> None:
 def smart_import_single(module_name: str, item_name: str) -> Any:
     """
     Import a single item using smart import strategy.
-    
+
     Convenience function for importing a single item.
-    
+
     Args:
         module_name: Name of the module to import from
         item_name: Name of the item to import
-        
+
     Returns:
         The imported item
     """
@@ -182,7 +182,7 @@ def import_cli(items: List[str]) -> Dict[str, Any]:
 # Re-export for convenience
 __all__ = [
     'smart_import',
-    'smart_import_single', 
+    'smart_import_single',
     'ensure_module_path',
     'import_config',
     'import_interfaces',

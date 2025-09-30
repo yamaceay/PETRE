@@ -1,7 +1,7 @@
 """
 PETRE: Privacy-preserving Entities Transparency and Re-identification Evaluation
 
-A professional Python package for evaluating privacy risks and implementing 
+A professional Python package for evaluating privacy risks and implementing
 k-anonymity protection for text data containing personally identifiable information.
 
 Public API exports and package initialization.
@@ -48,7 +48,7 @@ contexts_imports = smart_import('contexts', [
 
 # Core implementations
 core_imports = smart_import('core', [
-    'PETREDataProcessor', 'PETREModelManager', 
+    'PETREDataProcessor', 'PETREModelManager',
     'SHAPExplainabilityMethod', 'GreedyExplainabilityMethod',
     'PETREPipelineEvaluator', 'PETREDatasetImpl',
     'PETREComponentFactory', 'PETREOrchestratorImpl'
@@ -125,7 +125,7 @@ try:
         'AnnotationGenerator', 'AnnotationMethod', 'AnnotationConfig',
         'create_spacy_ner3_annotations', 'create_presidio_annotations', 'create_combined_annotations'
     ])
-    
+
     AnnotationGenerator = annotation_imports['AnnotationGenerator']
     AnnotationMethod = annotation_imports['AnnotationMethod']
     AnnotationConfig = annotation_imports['AnnotationConfig']
@@ -155,11 +155,11 @@ if _CLI_AVAILABLE:
 def create_default_orchestrator(config_path: str, **overrides):
     """
     Create a PETRE orchestrator with default factory.
-    
+
     Args:
         config_path: Path to JSON configuration file
         **overrides: Configuration overrides
-        
+
     Returns:
         Configured PETRE orchestrator
     """
@@ -170,11 +170,11 @@ def create_default_orchestrator(config_path: str, **overrides):
 def quick_evaluation(config_path: str, **overrides) -> dict:
     """
     Quick evaluation using default settings.
-    
+
     Args:
         config_path: Path to JSON configuration file
         **overrides: Configuration overrides
-        
+
     Returns:
         Evaluation results
     """
@@ -187,35 +187,35 @@ def quick_evaluation(config_path: str, **overrides) -> dict:
 __all__ = [
     # Version and metadata
     '__version__', '__author__', '__description__',
-    
+
     # Core interfaces
     'DataProcessor', 'ModelManager', 'ExplainabilityMethod',
     'PipelineEvaluator', 'AnonymizationEngine', 'PETREOrchestrator',
     'PETREDataset', 'ComponentFactory',
-    
+
     # Exception types
     'PETREError', 'ConfigurationError', 'DataProcessingError',
     'ModelError', 'EvaluationError', 'AnonymizationError',
-    
+
     # Configuration
     'AppConfig', 'create_app_config', 'load_config_from_file',
     'validate_config_data',
-    
+
     # Context managers
     'TRIPipelineContext', 'SpaCyModelContext', 'SHAPExplainerContext',
     'ModelResourceContext',
-    
+
     # Implementations
     'PETREDataProcessor', 'PETREModelManager',
     'SHAPExplainabilityMethod', 'GreedyExplainabilityMethod',
     'PETREPipelineEvaluator', 'PETREDatasetImpl',
     'PETREComponentFactory', 'PETREOrchestratorImpl',
-    
+
     # Main functions
     'run_petre_from_config', 'validate_configuration',
     'get_default_configuration', 'create_petre_orchestrator',
     'run_petre_workflow',
-    
+
     # Convenience functions
     'create_default_orchestrator', 'quick_evaluation'
 ]
@@ -228,7 +228,7 @@ if _CLI_AVAILABLE:
 if _ANNOTATION_AVAILABLE:
     __all__.extend([
         'AnnotationGenerator', 'AnnotationMethod', 'AnnotationConfig',
-        'create_spacy_ner3_annotations', 'create_presidio_annotations', 
+        'create_spacy_ner3_annotations', 'create_presidio_annotations',
         'create_combined_annotations'
     ])
 
