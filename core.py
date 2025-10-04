@@ -387,7 +387,7 @@ class PETREPipelineEvaluator(PipelineEvaluator):
             probs[pred_label] = pred_score
 
         return probs
-
+    
     def _pipeline_pred_to_label_score(self, pred: Dict[str, Any]) -> Tuple[int, float]:
         """Extract label and score from pipeline prediction."""
         label = int(pred["label"].split("_")[1])
@@ -768,14 +768,20 @@ class PETREOrchestratorImpl(PETREOrchestrator):
 
         # Use CPU device for better compatibility (avoiding MPS issues)
         device = -1 if self.config.device.type == 'cpu' else 0
+        
+        # Check if we need chunking for long documents
+        logging.warning("Document truncation enabled: Long documents (>512 tokens) will be truncated to fit model limits")
+        
         self.tri_pipeline = pipeline(
             "text-classification",
             model=self.config.tri_pipeline_path,
             tokenizer=self.config.tri_pipeline_path,
             device=device,
-            top_k=len(self.names)
+            top_k=len(self.names),
+            truncation=True,
+            max_length=512
         )
-
+        
         # Set tokenizer in dataset for proper processing
         self.dataset.tokenizer = self.tri_pipeline.tokenizer
 

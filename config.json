@@ -1,19 +1,14 @@
 {
-    "output_base_folder_path": "outputs/Wiki50/BK=Original",
-    "data_file_path": "data/Wiki50/Wiki50_BK=Original.json",
-    "individual_name_column": "name",
-    "original_text_column": "original_abstract",
-    "annotation_method": "spacy_ner3",
-    "annotation_confidence_threshold": 0.8,
-    "annotation_entity_types": [
-        "PERSON",
-        "ORG",
-        "GPE",
-        "DATE"
-    ],
-    "tri_pipeline_path": "tri_pipelines/Wiki50_BK=Original",
+    "output_base_folder_path": "outputs/TAB",
+    "data_file_path": "data/TAB/test.json",
+    "individual_name_column": "doc_id",
+    "original_text_column": "text",
+
+    "starting_anonymization_path": "data/TAB/annotations/manual.json",
+
+    "tri_pipeline_path": "models/tri_pipelines/TAB/TRI_Pipeline",
     "ks": [2,3,5,7,10],
-    "mask_text": "",
+    "mask_text": "[MASK]",
     "use_mask_all_instances": true,
     "explainability_mode": "SHAP",
     "use_chunking": true
